@@ -1,0 +1,7 @@
+# Xcode / Tuist generated
+build/
+Derived/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+.DS_Store
