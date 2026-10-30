@@ -19,7 +19,7 @@ struct ConfettiView: View {
             spin: .random(in: -6...6),
             drift: .random(in: -40...40),
             size: CGSize(width: .random(in: 6...11), height: .random(in: 10...16)),
-            color: wheelColors.randomElement()!
+            color: WheelPalette.colors.randomElement()!
         )
     }
 

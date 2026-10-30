@@ -1,21 +1,31 @@
 import SwiftUI
 
-let countRange = 2...100
-
 struct ContentView: View {
-    @AppStorage("count") private var count = 10
-    @State private var picked: [Int] = []
-    @State private var rotation: Double = 0
-    @State private var isSpinning = false
-    @State private var winner: Int?
-    @FocusState private var fieldFocused: Bool
+    enum Phase: Equatable {
+        case idle
+        case spinning
+        case winner(Int)
+    }
 
+    private static let countKey = "count"
     private let spinDuration = 4.5
 
-    /// Numbers still in the draw: 1...count minus the ones removed after winning.
-    private var remaining: [Int] {
-        (1...max(count, 1)).filter { !picked.contains($0) }
+    @State private var draw: DrawState
+    @State private var phase = Phase.idle
+    /// What the count field shows; it can be out of range while the user is typing.
+    @State private var typedCount: Int
+    @State private var rotation: Double = 0
+    @State private var pendingSpin: Task<Void, Never>?
+    @FocusState private var fieldFocused: Bool
+
+    init() {
+        let saved = UserDefaults.standard.object(forKey: Self.countKey) as? Int ?? 10
+        let draw = DrawState(count: saved)
+        _draw = State(initialValue: draw)
+        _typedCount = State(initialValue: draw.count)
     }
+
+    private var isSpinning: Bool { phase == .spinning }
 
     var body: some View {
         NavigationStack {
@@ -39,38 +49,40 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: count) {
+        .onChange(of: typedCount) {
             // Clamp the top right away; the bottom waits until typing ends so "15" can pass through "1".
-            if count > countRange.upperBound { count = countRange.upperBound }
-            picked = []
+            if typedCount > DrawState.countRange.upperBound { typedCount = DrawState.countRange.upperBound }
+            if DrawState.countRange.contains(typedCount) { applyCount(typedCount) }
         }
         .onChange(of: fieldFocused) {
-            if !fieldFocused, count < countRange.lowerBound { count = countRange.lowerBound }
+            if !fieldFocused { commitTypedCount() }
         }
+        .onDisappear { pendingSpin?.cancel() }
         .overlay {
-            if let winner {
+            if case .winner(let number) = phase {
                 WinnerView(
-                    number: winner,
-                    color: colorFor(remaining.firstIndex(of: winner) ?? 0, count: remaining.count),
-                    isLastDraw: remaining.count == 2,
-                    onDismiss: { withAnimation(.spring) { self.winner = nil } },
+                    number: number,
+                    color: WheelPalette.color(
+                        at: draw.remaining.firstIndex(of: number) ?? 0,
+                        count: draw.remaining.count
+                    ),
+                    isLastDraw: draw.isLastDraw,
+                    onDismiss: { withAnimation(.spring) { phase = .idle } },
                     onRemove: {
                         withAnimation(.spring) {
-                            picked.append(winner)
-                            // With one number left there is nothing to draw, so it takes the last place.
-                            if remaining.count == 1 { picked.append(contentsOf: remaining) }
-                            self.winner = nil
+                            draw.record(number)
+                            phase = .idle
                         }
                     },
-                    onSpinAgain: {
-                        withAnimation(.spring) { self.winner = nil }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { spin() }
-                    }
+                    onSpinAgain: spinAgain
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
-        .sensoryFeedback(.success, trigger: winner)
+        .sensoryFeedback(.success, trigger: phase) { _, newPhase in
+            if case .winner = newPhase { return true }
+            return false
+        }
     }
 
     private var countInput: some View {
@@ -80,7 +92,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 16) {
                 stepButton("minus", delta: -1)
-                TextField("", value: $count, format: .number)
+                TextField("", value: $typedCount, format: .number)
                     .keyboardType(.numberPad)
                     .focused($fieldFocused)
                     .multilineTextAlignment(.center)
@@ -90,7 +102,7 @@ struct ContentView: View {
                     .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
                 stepButton("plus", delta: 1)
             }
-            Text("Each person picks a number from 1 to \(count)")
+            Text("Each person picks a number from 1 to \(draw.count)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -99,7 +111,7 @@ struct ContentView: View {
 
     private func stepButton(_ symbol: String, delta: Int) -> some View {
         Button {
-            count = min(max(count + delta, countRange.lowerBound), countRange.upperBound)
+            typedCount = DrawState.clamped(draw.count + delta)
         } label: {
             Image(systemName: symbol)
                 .font(.title2.bold())
@@ -107,12 +119,12 @@ struct ContentView: View {
                 .background(Color(.secondarySystemGroupedBackground), in: .circle)
         }
         .buttonRepeatBehavior(.enabled)
-        .disabled(count + delta < countRange.lowerBound || count + delta > countRange.upperBound)
+        .disabled(!DrawState.countRange.contains(draw.count + delta))
     }
 
     private var wheel: some View {
         ZStack(alignment: .top) {
-            WheelView(numbers: remaining)
+            WheelView(numbers: draw.remaining)
                 .rotationEffect(.degrees(rotation))
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 6)
             Pointer()
@@ -135,22 +147,25 @@ struct ContentView: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
-        .disabled(isSpinning || remaining.count < 2)
+        .disabled(isSpinning || !draw.canDraw)
         .padding(.horizontal, 24)
     }
 
     @ViewBuilder
     private var pickedSection: some View {
-        if !picked.isEmpty {
+        if !draw.picked.isEmpty {
             VStack(spacing: 10) {
                 HStack {
-                    Text(remaining.isEmpty ? "Final order" : "Already picked")
+                    Text(draw.isFinished ? "Final order" : "Already picked")
                         .font(.headline)
                     Spacer()
-                    Button("Reset") { withAnimation { picked = [] } }
-                        .disabled(isSpinning)
+                    Button("Reset") {
+                        pendingSpin?.cancel()
+                        withAnimation { draw.reset() }
+                    }
+                    .disabled(isSpinning)
                 }
-                Text(picked.map { "#\($0)" }.joined(separator: "  →  "))
+                Text(draw.picked.map { "#\($0)" }.joined(separator: "  →  "))
                     .font(.body.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -161,29 +176,45 @@ struct ContentView: View {
         }
     }
 
+    private func applyCount(_ count: Int) {
+        guard count != draw.count else { return }
+        pendingSpin?.cancel()
+        draw.setCount(count)
+        UserDefaults.standard.set(draw.count, forKey: Self.countKey)
+    }
+
+    /// Applies whatever is in the field, raising a too-small number to the minimum.
+    private func commitTypedCount() {
+        applyCount(DrawState.clamped(typedCount))
+        typedCount = draw.count
+    }
+
     private func spin() {
-        let numbers = remaining
-        guard !isSpinning, numbers.count >= 2 else { return }
+        guard phase == .idle else { return }
         fieldFocused = false
+        commitTypedCount()
 
-        let winnerIndex = Int.random(in: 0..<numbers.count)
-        let slice = 360.0 / Double(numbers.count)
-        // Random landing spot inside the winning slice, away from its edges.
-        let offsetInSlice = Double.random(in: slice * 0.15...slice * 0.85)
-        let landing = Double(winnerIndex) * slice + offsetInSlice
-        // The pointer is at the top; rotating the wheel clockwise by R puts wheel angle (360 - R) under it.
-        let targetMod = (360 - landing).truncatingRemainder(dividingBy: 360)
-        let currentBase = rotation - rotation.truncatingRemainder(dividingBy: 360)
-        let fullTurns = Double(Int.random(in: 5...7)) * 360
+        var rng = SystemRandomNumberGenerator()
+        guard let plan = draw.planSpin(from: rotation, using: &rng) else { return }
 
-        isSpinning = true
+        phase = .spinning
         withAnimation(.timingCurve(0.15, 0.85, 0.25, 1, duration: spinDuration)) {
-            rotation = currentBase + fullTurns + targetMod
+            rotation = plan.targetRotation
         } completion: {
-            isSpinning = false
             withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-                winner = numbers[winnerIndex]
+                phase = .winner(plan.winner)
             }
+        }
+    }
+
+    private func spinAgain() {
+        withAnimation(.spring) { phase = .idle }
+        pendingSpin?.cancel()
+        // Let the winner card fade out before the wheel starts turning.
+        pendingSpin = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            spin()
         }
     }
 }

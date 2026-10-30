@@ -20,3 +20,11 @@ tuist generate
 ```
 
 Then open `RandomPicker.xcworkspace`, set your own development team under Signing & Capabilities, and run. Requires iOS 17+.
+
+## Tests
+
+The draw rules (`Sources/Draw`) are covered by Swift Testing tests in `Tests/`, including a check that the wheel lands on the winner for every wheel size from 2 to 100. Run them with ⌘U in Xcode, or:
+
+```bash
+xcodebuild test -project RandomPicker.xcodeproj -scheme RandomPicker -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+```
