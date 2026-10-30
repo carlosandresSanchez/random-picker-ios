@@ -81,11 +81,13 @@ struct ContentView: View {
                 WinnerView(
                     number: winner,
                     color: colorFor(remaining.firstIndex(of: winner) ?? 0, count: remaining.count),
-                    canRemove: remaining.count > 2,
+                    isLastDraw: remaining.count == 2,
                     onDismiss: { withAnimation(.spring) { self.winner = nil } },
                     onRemove: {
                         withAnimation(.spring) {
                             picked.append(winner)
+                            // With one number left there is nothing to draw, so it takes the last place.
+                            if remaining.count == 1 { picked.append(contentsOf: remaining) }
                             self.winner = nil
                         }
                     },
@@ -171,7 +173,7 @@ struct ContentView: View {
         if !picked.isEmpty {
             VStack(spacing: 10) {
                 HStack {
-                    Text("Already picked")
+                    Text(remaining.isEmpty ? "Final order" : "Already picked")
                         .font(.headline)
                     Spacer()
                     Button("Reset") { withAnimation { picked = [] } }
@@ -228,6 +230,9 @@ struct WheelView: View {
             let slice = 360.0 / Double(count)
 
             ZStack {
+                if numbers.isEmpty {
+                    Circle().fill(Color(.tertiarySystemFill))
+                }
                 ForEach(Array(numbers.enumerated()), id: \.element) { index, number in
                     let start = -90 + Double(index) * slice
                     Slice(start: .degrees(start), end: .degrees(start + slice))
@@ -299,7 +304,7 @@ struct Pointer: Shape {
 struct WinnerView: View {
     let number: Int
     let color: Color
-    let canRemove: Bool
+    let isLastDraw: Bool
     let onDismiss: () -> Void
     let onRemove: () -> Void
     let onSpinAgain: () -> Void
@@ -340,11 +345,10 @@ struct WinnerView: View {
                     .buttonStyle(.borderedProminent)
 
                     HStack(spacing: 10) {
-                        if canRemove {
-                            Button(action: onRemove) {
-                                Label("Remove", systemImage: "minus.circle")
-                                    .frame(maxWidth: .infinity)
-                            }
+                        Button(action: onRemove) {
+                            Label(isLastDraw ? "Finish" : "Remove",
+                                  systemImage: isLastDraw ? "checkmark.circle" : "minus.circle")
+                                .frame(maxWidth: .infinity)
                         }
                         Button(action: onDismiss) {
                             Text("Done").frame(maxWidth: .infinity)
