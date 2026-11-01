@@ -21,6 +21,29 @@ struct SpinMathTests {
         }
     }
 
+    /// Ties the drawing to the landing math: after the spin, the pointer must sit inside the
+    /// angles where WheelView actually drew the winner's slice.
+    @Test(arguments: DrawState.countRange)
+    func pointerSitsInsideTheDrawnWinningSlice(sliceCount: Int) {
+        for winnerIndex in 0..<sliceCount {
+            for offset in [0.15, 0.5, 0.85] {
+                let target = SpinMath.targetRotation(
+                    current: 123.4,
+                    winnerIndex: winnerIndex,
+                    sliceCount: sliceCount,
+                    turns: 5,
+                    offsetFraction: offset
+                )
+                let drawn = SpinMath.sliceAngles(index: winnerIndex, sliceCount: sliceCount)
+                // Rotating the wheel by `target` brings this wheel angle under the pointer.
+                let pointerOnWheel = SpinMath.pointerAngle - target
+                var intoSlice = (pointerOnWheel - drawn.start).truncatingRemainder(dividingBy: 360)
+                if intoSlice < 0 { intoSlice += 360 }
+                #expect(intoSlice > 0 && intoSlice < drawn.end - drawn.start)
+            }
+        }
+    }
+
     @Test(arguments: [5, 6, 7])
     func addsAtLeastTheRequestedFullTurns(turns: Int) {
         let current = 725.0

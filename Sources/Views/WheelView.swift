@@ -8,17 +8,16 @@ struct WheelView: View {
             let size = min(geo.size.width, geo.size.height)
             let radius = size / 2
             let count = max(numbers.count, 1)
-            let slice = 360.0 / Double(count)
 
             ZStack {
                 if numbers.isEmpty {
                     Circle().fill(Color(.tertiarySystemFill))
                 }
                 ForEach(Array(numbers.enumerated()), id: \.element) { index, number in
-                    let start = -90 + Double(index) * slice
-                    Slice(start: .degrees(start), end: .degrees(start + slice))
+                    let (start, end) = SpinMath.sliceAngles(index: index, sliceCount: count)
+                    Slice(start: .degrees(start), end: .degrees(end))
                         .fill(WheelPalette.color(at: index, count: numbers.count))
-                    Slice(start: .degrees(start), end: .degrees(start + slice))
+                    Slice(start: .degrees(start), end: .degrees(end))
                         .stroke(.white.opacity(0.9), lineWidth: count > 40 ? 0.5 : 2)
 
                     Text("\(number)")
@@ -29,7 +28,7 @@ struct WheelView: View {
                         .fixedSize()
                         // Top of the digit faces the rim, so it reads upright when under the pointer.
                         .offset(y: -radius * 0.76)
-                        .rotationEffect(.degrees(start + slice / 2 + 90))
+                        .rotationEffect(.degrees((start + end) / 2 + 90))
                 }
 
                 Circle()

@@ -2,6 +2,17 @@ import Foundation
 
 /// Angle math for a wheel whose slice 0 starts at the top and runs clockwise, under a pointer at the top.
 enum SpinMath {
+    /// The top of the wheel, where the pointer sits, in SwiftUI degrees (0° is 3 o'clock, angles grow clockwise).
+    static let pointerAngle = -90.0
+
+    /// Where slice `index` begins and ends on the unrotated wheel, in SwiftUI degrees.
+    /// The wheel draws its slices here, so drawing and landing share one convention.
+    static func sliceAngles(index: Int, sliceCount: Int) -> (start: Double, end: Double) {
+        let slice = 360.0 / Double(sliceCount)
+        let start = pointerAngle + Double(index) * slice
+        return (start, start + slice)
+    }
+
     /// Clockwise rotation, in degrees, that adds `turns` full spins to `current` and stops with the
     /// pointer `offsetFraction` (0...1) of the way through slice `winnerIndex`.
     static func targetRotation(
